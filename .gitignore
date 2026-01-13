@@ -1,0 +1,153 @@
+# ============================================
+# ROADGUARD - GITIGNORE (SECURITY OPTIMIZED)
+# ============================================
+
+# ==========================================
+# 🔐 SENSITIVE FILES - NEVER COMMIT
+# ==========================================
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+.env.test
+*.env
+**/.env
+**/.env.*
+
+# Private keys and secrets
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+**/secrets/
+**/private/
+*.secret
+*.secrets
+credentials.json
+service-account*.json
+
+# Wallet files
+**/keystore/
+*.keystore
+wallet.json
+**/wallets/
+
+# ==========================================
+# 📦 DEPENDENCIES
+# ==========================================
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ==========================================
+# 🏗️ BUILD OUTPUTS
+# ==========================================
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Foundry/Solidity
+contracts/out/
+contracts/cache/
+contracts/lib/
+cache_forge/
+broadcast/
+!broadcast/**/run-latest.json
+
+# ==========================================
+# 🧪 TESTING & COVERAGE
+# ==========================================
+coverage/
+.coverage
+*.lcov
+lcov.info
+.nyc_output/
+test-results/
+junit.xml
+
+# ==========================================
+# 💻 IDE & EDITORS
+# ==========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+.history/
+
+# ==========================================
+# 🖥️ OPERATING SYSTEM
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ==========================================
+# 📝 LOGS & DEBUG
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ==========================================
+# 🔧 MISC
+# ==========================================
+# TypeScript
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Vercel
+.vercel
+
+# Drizzle
+drizzle/
+
+# Turbo
+.turbo/
+
+# ESLint
+.eslintcache
+
+# Prettier
+.prettiercache
+
+# Local
+local/
+tmp/
+temp/
+.tmp/
+.temp/
+
+# ==========================================
+# 📊 DATABASE
+# ==========================================
+*.sqlite
+*.sqlite3
+*.db
+*.sql.gz

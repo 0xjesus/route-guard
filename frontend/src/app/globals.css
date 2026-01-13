@@ -1,0 +1,380 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   MANTLE DESIGN SYSTEM - Global Styles
+   ============================================ */
+
+@layer base {
+  /* Import Inter font */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    /* Core Colors */
+    --color-accent: #65B3AE;
+    --color-accent-light: #8ECAC6;
+    --color-accent-dark: #4A9994;
+
+    /* Backgrounds */
+    --bg-primary: #0A0B0D;
+    --bg-secondary: #12141A;
+    --bg-tertiary: #1A1D26;
+    --bg-elevated: #222632;
+    --bg-card: #181B23;
+
+    /* Text */
+    --text-primary: #FFFFFF;
+    --text-secondary: #A1A7B4;
+    --text-tertiary: #6B7280;
+
+    /* Gradients */
+    --gradient-accent: linear-gradient(135deg, #65B3AE 0%, #4A9994 100%);
+    --gradient-glow: radial-gradient(ellipse at center, rgba(101, 179, 174, 0.15) 0%, transparent 70%);
+    --gradient-mesh:
+      radial-gradient(at 40% 20%, rgba(101, 179, 174, 0.1) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, rgba(74, 153, 148, 0.08) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, rgba(142, 202, 198, 0.05) 0px, transparent 50%);
+  }
+
+  * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(101, 179, 174, 0.3);
+    color: white;
+  }
+
+  /* Focus styles */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--bg-elevated);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent-dark);
+  }
+}
+
+@layer components {
+  /* ============================================
+     MATERIAL DESIGN BUTTONS
+     ============================================ */
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           font-medium text-body-sm
+           transition-all duration-200 ease-out
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-mantle-bg-primary;
+  }
+
+  .btn-primary {
+    @apply btn px-6 py-3 rounded-xl
+           bg-gradient-to-r from-mantle-accent to-mantle-accent-dark
+           text-mantle-black font-semibold
+           hover:shadow-glow-accent hover:scale-[1.02]
+           active:scale-[0.98]
+           focus-visible:ring-mantle-accent;
+  }
+
+  .btn-secondary {
+    @apply btn px-6 py-3 rounded-xl
+           bg-mantle-bg-elevated border border-mantle-bg-elevated
+           text-mantle-text-primary
+           hover:border-mantle-accent/50 hover:bg-mantle-bg-tertiary
+           active:scale-[0.98]
+           focus-visible:ring-mantle-accent;
+  }
+
+  .btn-ghost {
+    @apply btn px-4 py-2 rounded-lg
+           text-mantle-text-secondary
+           hover:text-mantle-text-primary hover:bg-mantle-bg-tertiary
+           active:bg-mantle-bg-elevated;
+  }
+
+  .btn-icon {
+    @apply btn p-3 rounded-xl
+           bg-mantle-bg-elevated
+           text-mantle-text-secondary
+           hover:text-mantle-accent hover:bg-mantle-bg-tertiary
+           active:scale-[0.95];
+  }
+
+  /* Sizes */
+  .btn-sm {
+    @apply px-4 py-2 text-label-md rounded-lg;
+  }
+
+  .btn-lg {
+    @apply px-8 py-4 text-body-md rounded-2xl;
+  }
+
+  /* ============================================
+     MATERIAL DESIGN CARDS
+     ============================================ */
+
+  .card {
+    @apply bg-mantle-bg-card rounded-2xl
+           border border-white/5
+           backdrop-blur-sm;
+  }
+
+  .card-elevated {
+    @apply card shadow-elevation-2
+           hover:shadow-elevation-3 hover:border-white/10
+           transition-all duration-300;
+  }
+
+  .card-interactive {
+    @apply card-elevated cursor-pointer
+           hover:translate-y-[-2px]
+           active:translate-y-0;
+  }
+
+  .card-glow {
+    @apply card shadow-inner-glow
+           border-mantle-accent/20;
+  }
+
+  /* ============================================
+     FORM INPUTS
+     ============================================ */
+
+  .input {
+    @apply w-full px-4 py-3 rounded-xl
+           bg-mantle-bg-secondary border border-white/10
+           text-mantle-text-primary placeholder:text-mantle-text-tertiary
+           focus:border-mantle-accent focus:ring-1 focus:ring-mantle-accent
+           transition-all duration-200;
+  }
+
+  .input-lg {
+    @apply input px-5 py-4 text-body-md rounded-2xl;
+  }
+
+  .input-error {
+    @apply border-mantle-error focus:border-mantle-error focus:ring-mantle-error;
+  }
+
+  .label {
+    @apply block text-label-lg font-medium text-mantle-text-secondary mb-2;
+  }
+
+  /* ============================================
+     GLASS MORPHISM
+     ============================================ */
+
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl
+           border border-white/10
+           shadow-elevation-2;
+  }
+
+  .glass-dark {
+    @apply bg-black/20 backdrop-blur-xl
+           border border-white/5;
+  }
+
+  /* ============================================
+     GRADIENTS & EFFECTS
+     ============================================ */
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-mantle-accent-light via-mantle-accent to-mantle-accent-dark
+           bg-clip-text text-transparent;
+  }
+
+  .gradient-border {
+    @apply relative;
+  }
+
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-[inherit]
+           bg-gradient-to-r from-mantle-accent/50 to-mantle-accent-dark/50
+           -z-10 blur-sm opacity-0 transition-opacity duration-300;
+  }
+
+  .gradient-border:hover::before {
+    @apply opacity-100;
+  }
+
+  .glow-effect {
+    @apply relative;
+  }
+
+  .glow-effect::after {
+    content: '';
+    @apply absolute -inset-1 rounded-[inherit]
+           bg-gradient-to-r from-mantle-accent/20 to-mantle-accent-dark/20
+           -z-10 blur-xl opacity-0 transition-opacity duration-500;
+  }
+
+  .glow-effect:hover::after {
+    @apply opacity-100;
+  }
+
+  /* ============================================
+     LOADING STATES
+     ============================================ */
+
+  .skeleton {
+    @apply bg-gradient-to-r from-mantle-bg-secondary via-mantle-bg-tertiary to-mantle-bg-secondary
+           bg-[length:200%_100%] animate-[shimmer_1.5s_infinite]
+           rounded-lg;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .spinner {
+    @apply w-5 h-5 border-2 border-mantle-text-tertiary border-t-mantle-accent
+           rounded-full animate-spin;
+  }
+
+  /* ============================================
+     TYPOGRAPHY
+     ============================================ */
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-gradient {
+    @apply bg-gradient-to-r from-white via-mantle-accent-light to-white
+           bg-clip-text text-transparent
+           bg-[length:200%_auto] animate-gradient-shift;
+  }
+
+  /* ============================================
+     MAP CONTAINER
+     ============================================ */
+
+  .map-container {
+    @apply w-full h-full relative overflow-hidden rounded-none;
+  }
+
+  /* Google Maps custom styling overrides */
+  .gm-style {
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  .gm-style .gm-style-iw-c {
+    @apply !bg-mantle-bg-card !rounded-xl !p-0 !shadow-elevation-4;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .gm-style .gm-style-iw-d {
+    @apply !overflow-hidden;
+  }
+
+  .gm-style .gm-style-iw-tc::after {
+    @apply !bg-mantle-bg-card;
+  }
+
+  .gm-style button[title="Close"] {
+    @apply !opacity-70 hover:!opacity-100;
+  }
+
+  /* ============================================
+     THREE.JS CANVAS
+     ============================================ */
+
+  .three-canvas {
+    @apply absolute inset-0 -z-10;
+  }
+
+  .three-canvas canvas {
+    @apply w-full h-full;
+  }
+
+  /* ============================================
+     RESPONSIVE UTILITIES
+     ============================================ */
+
+  .container-app {
+    @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Mobile-first touch targets */
+  @media (pointer: coarse) {
+    .btn, .btn-icon {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Aspect ratios */
+  .aspect-hero {
+    aspect-ratio: 16 / 9;
+  }
+
+  .aspect-card {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* Text shadow for readability on images */
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  .text-shadow-lg {
+    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.7);
+  }
+}
