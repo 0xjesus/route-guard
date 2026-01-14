@@ -147,7 +147,7 @@ export default function EnhancedDashboard({ onBack }: EnhancedDashboardProps) {
   const fetchReports = useCallback(async (lat: number, lng: number) => {
     setIsLoadingReports(true);
     try {
-      const res = await fetch(`/api/reports?lat=${lat}&lng=${lng}&radius=50`);
+      const res = await fetch(`/api/reports?lat=${lat}&lng=${lng}&radius=500`);
       const data = await res.json();
 
       if (data.reports && data.reports.length > 0) {
@@ -180,8 +180,8 @@ export default function EnhancedDashboard({ onBack }: EnhancedDashboardProps) {
 
   // Get user location and fetch reports on mount
   useEffect(() => {
-    // Always fetch NYC first to show existing on-chain reports
-    fetchReports(40.7128, -74.006); // New York (where real on-chain reports exist)
+    // Fetch Mexico region first to show existing on-chain reports
+    fetchReports(19.4326, -99.1332); // Mexico City
 
     // Then try to get user location for the "My Location" button
     if (navigator.geolocation) {
