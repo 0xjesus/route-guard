@@ -11,6 +11,35 @@ export interface RouteHazard {
   distanceFromStart: number; // meters along route
 }
 
+// Single route info
+export interface RouteInfo {
+  index: number;
+  summary: string;
+  distance: string;
+  distanceValue: number;
+  duration: string;
+  durationValue: number;
+  durationInTraffic?: string;
+  hazardCount: number;
+  hazards: RouteHazard[];
+  warnings: string[];
+  color: string; // Route color for UI display
+  // For Google Maps navigation
+  startLat: number;
+  startLng: number;
+  endLat: number;
+  endLng: number;
+  waypoints: { lat: number; lng: number }[];
+}
+
+// Full route result with data
+export interface RouteResult {
+  startAddress: string;
+  endAddress: string;
+  routes: RouteInfo[];
+  selectedRouteIndex: number;
+}
+
 // Map controller interface for external control
 export interface MapController {
   flyTo: (lat: number, lng: number, zoom?: number) => void;
@@ -19,7 +48,9 @@ export interface MapController {
   toggleHeatmap: () => void;
   toggleClustering: () => void;
   getStreetViewPreview: (lat: number, lng: number) => string;
-  calculateRoute: (origin: string, destination: string) => Promise<RouteHazard[]>;
+  calculateRoute: (origin: string, destination: string, showAlternatives?: boolean) => Promise<RouteResult>;
+  selectRoute: (index: number) => void;
+  selectRoutes: (indices: number[]) => void;
   clearRoute: () => void;
 }
 
@@ -32,6 +63,15 @@ interface AdvancedMapProps {
   className?: string;
 }
 
+// Route colors for comparison
+const ROUTE_COLORS = [
+  { main: "#65B3AE", alt: "#65B3AE50" }, // Teal (selected)
+  { main: "#8B5CF6", alt: "#8B5CF650" }, // Purple
+  { main: "#F59E0B", alt: "#F59E0B50" }, // Orange
+  { main: "#EC4899", alt: "#EC489950" }, // Pink
+  { main: "#10B981", alt: "#10B98150" }, // Green
+];
+
 const AdvancedMap = forwardRef<MapController, AdvancedMapProps>(
   ({ reports, selectedReport, onReportSelect, onLocationSelect, showHeatmap = false, className }, ref) => {
     const mapRef = useRef<HTMLDivElement>(null);
@@ -41,6 +81,9 @@ const AdvancedMap = forwardRef<MapController, AdvancedMapProps>(
     const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(null);
     const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
     const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
+    const routePolylinesRef = useRef<google.maps.Polyline[]>([]);
+    const routeMarkersRef = useRef<google.maps.Marker[]>([]);
+    const directionsResultRef = useRef<google.maps.DirectionsResult | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
     const [heatmapVisible, setHeatmapVisible] = useState(showHeatmap);
 
@@ -125,10 +168,144 @@ const AdvancedMap = forwardRef<MapController, AdvancedMapProps>(
         return `https://maps.googleapis.com/maps/api/streetview?size=400x200&location=${lat},${lng}&fov=90&heading=235&pitch=10&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`;
       },
 
-      calculateRoute: async (origin: string, destination: string): Promise<RouteHazard[]> => {
-        if (!directionsServiceRef.current || !directionsRendererRef.current || !mapInstance.current) {
-          return [];
+      calculateRoute: async (origin: string, destination: string, showAlternatives = true): Promise<RouteResult> => {
+        if (!directionsServiceRef.current || !mapInstance.current) {
+          throw new Error("Map not initialized");
         }
+
+        // Clear existing routes
+        routePolylinesRef.current.forEach(p => p.setMap(null));
+        routePolylinesRef.current = [];
+        routeMarkersRef.current.forEach(m => m.setMap(null));
+        routeMarkersRef.current = [];
+        if (directionsRendererRef.current) {
+          directionsRendererRef.current.setMap(null);
+        }
+
+        // Helper function to get hazards for a route
+        const getHazardsForRoute = (routePath: google.maps.LatLng[]): RouteHazard[] => {
+          const hazards: RouteHazard[] = [];
+          reports.forEach((report) => {
+            const reportLatLng = new google.maps.LatLng(report.lat, report.lng);
+            let minDistance = Infinity;
+            let distanceAlongRoute = 0;
+            let cumulativeDistance = 0;
+
+            for (let i = 0; i < routePath.length; i++) {
+              const pathPoint = routePath[i];
+              const distance = google.maps.geometry.spherical.computeDistanceBetween(reportLatLng, pathPoint);
+
+              if (distance < minDistance) {
+                minDistance = distance;
+                distanceAlongRoute = cumulativeDistance;
+              }
+
+              if (i > 0) {
+                cumulativeDistance += google.maps.geometry.spherical.computeDistanceBetween(
+                  routePath[i - 1],
+                  pathPoint
+                );
+              }
+            }
+
+            if (minDistance <= 500) {
+              hazards.push({ report, distanceFromStart: distanceAlongRoute });
+            }
+          });
+          return hazards.sort((a, b) => a.distanceFromStart - b.distanceFromStart);
+        };
+
+        // Helper to draw all routes
+        const drawAllRoutes = (result: google.maps.DirectionsResult, selectedIndex: number) => {
+          // Clear existing polylines
+          routePolylinesRef.current.forEach(p => p.setMap(null));
+          routePolylinesRef.current = [];
+          routeMarkersRef.current.forEach(m => m.setMap(null));
+          routeMarkersRef.current = [];
+
+          // Draw routes in reverse order so selected is on top
+          const routeIndices = result.routes.map((_, i) => i).sort((a, b) => {
+            if (a === selectedIndex) return 1;
+            if (b === selectedIndex) return -1;
+            return 0;
+          });
+
+          routeIndices.forEach((routeIndex) => {
+            const route = result.routes[routeIndex];
+            const isSelected = routeIndex === selectedIndex;
+            const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+
+            // Create polyline for this route
+            const polyline = new google.maps.Polyline({
+              path: route.overview_path,
+              strokeColor: isSelected ? color.main : "#666666",
+              strokeOpacity: isSelected ? 1 : 0.5,
+              strokeWeight: isSelected ? 7 : 4,
+              map: mapInstance.current,
+              zIndex: isSelected ? 100 : routeIndex,
+            });
+
+            routePolylinesRef.current.push(polyline);
+
+            // Add route number marker at midpoint
+            const midIndex = Math.floor(route.overview_path.length / 2);
+            const midPoint = route.overview_path[midIndex];
+
+            const marker = new google.maps.Marker({
+              position: midPoint,
+              map: mapInstance.current,
+              label: {
+                text: String(routeIndex + 1),
+                color: isSelected ? "#000" : "#fff",
+                fontWeight: "bold",
+                fontSize: "14px",
+              },
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 16,
+                fillColor: isSelected ? color.main : "#666666",
+                fillOpacity: 1,
+                strokeColor: "#fff",
+                strokeWeight: 2,
+              },
+              zIndex: isSelected ? 200 : 50 + routeIndex,
+            });
+
+            routeMarkersRef.current.push(marker);
+          });
+
+          // Add start marker (green)
+          const startMarker = new google.maps.Marker({
+            position: result.routes[0].legs[0].start_location,
+            map: mapInstance.current,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 10,
+              fillColor: "#22C55E",
+              fillOpacity: 1,
+              strokeColor: "#fff",
+              strokeWeight: 3,
+            },
+            zIndex: 300,
+          });
+          routeMarkersRef.current.push(startMarker);
+
+          // Add end marker (red)
+          const endMarker = new google.maps.Marker({
+            position: result.routes[0].legs[0].end_location,
+            map: mapInstance.current,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 10,
+              fillColor: "#EF4444",
+              fillOpacity: 1,
+              strokeColor: "#fff",
+              strokeWeight: 3,
+            },
+            zIndex: 300,
+          });
+          routeMarkersRef.current.push(endMarker);
+        };
 
         return new Promise((resolve, reject) => {
           directionsServiceRef.current!.route(
@@ -136,57 +313,74 @@ const AdvancedMap = forwardRef<MapController, AdvancedMapProps>(
               origin,
               destination,
               travelMode: google.maps.TravelMode.DRIVING,
+              provideRouteAlternatives: showAlternatives,
+              drivingOptions: {
+                departureTime: new Date(),
+                trafficModel: google.maps.TrafficModel.BEST_GUESS,
+              },
             },
             (result, status) => {
               if (status === google.maps.DirectionsStatus.OK && result) {
-                directionsRendererRef.current!.setDirections(result);
+                console.log(`[Routes] Google returned ${result.routes.length} routes`);
 
-                // Get route path for hazard detection
-                const routePath = result.routes[0]?.overview_path || [];
-                const hazards: RouteHazard[] = [];
+                // Store result for selectRoute
+                directionsResultRef.current = result;
 
-                // Check each report against the route
-                reports.forEach((report) => {
-                  const reportLatLng = new google.maps.LatLng(report.lat, report.lng);
-                  let minDistance = Infinity;
-                  let distanceAlongRoute = 0;
-                  let cumulativeDistance = 0;
+                // Draw all routes with route 0 selected
+                drawAllRoutes(result, 0);
 
-                  // Check distance from each point on the route path
-                  for (let i = 0; i < routePath.length; i++) {
-                    const pathPoint = routePath[i];
-                    const distance = google.maps.geometry.spherical.computeDistanceBetween(
-                      reportLatLng,
-                      pathPoint
-                    );
+                // Fit bounds to show all routes
+                const bounds = new google.maps.LatLngBounds();
+                result.routes.forEach(route => {
+                  route.overview_path.forEach(point => bounds.extend(point));
+                });
+                mapInstance.current!.fitBounds(bounds, 50);
 
-                    if (distance < minDistance) {
-                      minDistance = distance;
-                      distanceAlongRoute = cumulativeDistance;
-                    }
+                // Process ALL routes (main + alternatives)
+                const allRoutes: RouteInfo[] = result.routes.map((route, index) => {
+                  const leg = route.legs[0];
+                  const routePath = route.overview_path || [];
+                  const hazards = getHazardsForRoute(routePath);
 
-                    // Calculate cumulative distance along route
-                    if (i > 0) {
-                      cumulativeDistance += google.maps.geometry.spherical.computeDistanceBetween(
-                        routePath[i - 1],
-                        pathPoint
-                      );
+                  // Get waypoints for Google Maps URL
+                  const waypoints: { lat: number; lng: number }[] = [];
+                  for (let i = Math.floor(routePath.length / 4); i < routePath.length; i += Math.floor(routePath.length / 4)) {
+                    if (waypoints.length < 3) {
+                      waypoints.push({
+                        lat: routePath[i].lat(),
+                        lng: routePath[i].lng(),
+                      });
                     }
                   }
 
-                  // If report is within 500 meters of route, it's a hazard
-                  if (minDistance <= 500) {
-                    hazards.push({
-                      report,
-                      distanceFromStart: distanceAlongRoute,
-                    });
-                  }
+                  return {
+                    index,
+                    summary: route.summary || `Route ${index + 1}`,
+                    distance: leg.distance?.text || "N/A",
+                    distanceValue: leg.distance?.value || 0,
+                    duration: leg.duration?.text || "N/A",
+                    durationValue: leg.duration?.value || 0,
+                    durationInTraffic: leg.duration_in_traffic?.text,
+                    hazardCount: hazards.length,
+                    hazards,
+                    warnings: route.warnings || [],
+                    color: ROUTE_COLORS[index % ROUTE_COLORS.length].main,
+                    startLat: leg.start_location.lat(),
+                    startLng: leg.start_location.lng(),
+                    endLat: leg.end_location.lat(),
+                    endLng: leg.end_location.lng(),
+                    waypoints,
+                  };
                 });
 
-                // Sort hazards by distance along route
-                hazards.sort((a, b) => a.distanceFromStart - b.distanceFromStart);
+                const routeResult: RouteResult = {
+                  startAddress: result.routes[0].legs[0].start_address,
+                  endAddress: result.routes[0].legs[0].end_address,
+                  routes: allRoutes,
+                  selectedRouteIndex: 0,
+                };
 
-                resolve(hazards);
+                resolve(routeResult);
               } else {
                 console.error("Directions request failed:", status);
                 reject(new Error(`Directions request failed: ${status}`));
@@ -196,7 +390,207 @@ const AdvancedMap = forwardRef<MapController, AdvancedMapProps>(
         });
       },
 
+      selectRoute: (index: number) => {
+        if (!directionsResultRef.current || !mapInstance.current) return;
+
+        // Clear and redraw all routes with new selection
+        routePolylinesRef.current.forEach(p => p.setMap(null));
+        routePolylinesRef.current = [];
+        routeMarkersRef.current.forEach(m => m.setMap(null));
+        routeMarkersRef.current = [];
+
+        const result = directionsResultRef.current;
+
+        // Draw routes in reverse order so selected is on top
+        const routeIndices = result.routes.map((_, i) => i).sort((a, b) => {
+          if (a === index) return 1;
+          if (b === index) return -1;
+          return 0;
+        });
+
+        routeIndices.forEach((routeIndex) => {
+          const route = result.routes[routeIndex];
+          const isSelected = routeIndex === index;
+          const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+
+          const polyline = new google.maps.Polyline({
+            path: route.overview_path,
+            strokeColor: isSelected ? color.main : "#666666",
+            strokeOpacity: isSelected ? 1 : 0.5,
+            strokeWeight: isSelected ? 7 : 4,
+            map: mapInstance.current,
+            zIndex: isSelected ? 100 : routeIndex,
+          });
+
+          routePolylinesRef.current.push(polyline);
+
+          // Route number marker
+          const midIndex = Math.floor(route.overview_path.length / 2);
+          const midPoint = route.overview_path[midIndex];
+
+          const marker = new google.maps.Marker({
+            position: midPoint,
+            map: mapInstance.current,
+            label: {
+              text: String(routeIndex + 1),
+              color: isSelected ? "#000" : "#fff",
+              fontWeight: "bold",
+              fontSize: "14px",
+            },
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 16,
+              fillColor: isSelected ? color.main : "#666666",
+              fillOpacity: 1,
+              strokeColor: "#fff",
+              strokeWeight: 2,
+            },
+            zIndex: isSelected ? 200 : 50 + routeIndex,
+          });
+
+          routeMarkersRef.current.push(marker);
+        });
+
+        // Start marker
+        const startMarker = new google.maps.Marker({
+          position: result.routes[0].legs[0].start_location,
+          map: mapInstance.current,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: "#22C55E",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 3,
+          },
+          zIndex: 300,
+        });
+        routeMarkersRef.current.push(startMarker);
+
+        // End marker
+        const endMarker = new google.maps.Marker({
+          position: result.routes[0].legs[0].end_location,
+          map: mapInstance.current,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: "#EF4444",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 3,
+          },
+          zIndex: 300,
+        });
+        routeMarkersRef.current.push(endMarker);
+      },
+
+      selectRoutes: (indices: number[]) => {
+        if (!directionsResultRef.current || !mapInstance.current) return;
+
+        // Clear and redraw all routes with new selections
+        routePolylinesRef.current.forEach(p => p.setMap(null));
+        routePolylinesRef.current = [];
+        routeMarkersRef.current.forEach(m => m.setMap(null));
+        routeMarkersRef.current = [];
+
+        const result = directionsResultRef.current;
+        const selectedSet = new Set(indices);
+
+        // Draw unselected routes first, then selected ones on top
+        const routeIndices = result.routes.map((_, i) => i).sort((a, b) => {
+          const aSelected = selectedSet.has(a);
+          const bSelected = selectedSet.has(b);
+          if (aSelected && !bSelected) return 1;
+          if (!aSelected && bSelected) return -1;
+          return 0;
+        });
+
+        routeIndices.forEach((routeIndex) => {
+          const route = result.routes[routeIndex];
+          const isSelected = selectedSet.has(routeIndex);
+          const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+
+          const polyline = new google.maps.Polyline({
+            path: route.overview_path,
+            strokeColor: isSelected ? color.main : "#444444",
+            strokeOpacity: isSelected ? 1 : 0.3,
+            strokeWeight: isSelected ? 7 : 3,
+            map: mapInstance.current,
+            zIndex: isSelected ? 100 + routeIndex : routeIndex,
+          });
+
+          routePolylinesRef.current.push(polyline);
+
+          // Route number marker
+          const midIndex = Math.floor(route.overview_path.length / 2);
+          const midPoint = route.overview_path[midIndex];
+
+          const marker = new google.maps.Marker({
+            position: midPoint,
+            map: mapInstance.current,
+            label: {
+              text: String(routeIndex + 1),
+              color: isSelected ? "#000" : "#888",
+              fontWeight: "bold",
+              fontSize: "14px",
+            },
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: isSelected ? 18 : 14,
+              fillColor: isSelected ? color.main : "#444444",
+              fillOpacity: 1,
+              strokeColor: "#fff",
+              strokeWeight: isSelected ? 3 : 1,
+            },
+            zIndex: isSelected ? 200 + routeIndex : 50 + routeIndex,
+          });
+
+          routeMarkersRef.current.push(marker);
+        });
+
+        // Start marker
+        const startMarker = new google.maps.Marker({
+          position: result.routes[0].legs[0].start_location,
+          map: mapInstance.current,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: "#22C55E",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 3,
+          },
+          zIndex: 300,
+        });
+        routeMarkersRef.current.push(startMarker);
+
+        // End marker
+        const endMarker = new google.maps.Marker({
+          position: result.routes[0].legs[0].end_location,
+          map: mapInstance.current,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: "#EF4444",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 3,
+          },
+          zIndex: 300,
+        });
+        routeMarkersRef.current.push(endMarker);
+      },
+
       clearRoute: () => {
+        // Clear polylines
+        routePolylinesRef.current.forEach(p => p.setMap(null));
+        routePolylinesRef.current = [];
+        // Clear markers
+        routeMarkersRef.current.forEach(m => m.setMap(null));
+        routeMarkersRef.current = [];
+        // Clear stored result
+        directionsResultRef.current = null;
+        // Clear directions renderer
         if (directionsRendererRef.current) {
           directionsRendererRef.current.setDirections({ routes: [] } as unknown as google.maps.DirectionsResult);
         }

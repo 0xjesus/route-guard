@@ -50,11 +50,12 @@ export default function Home() {
   }, [isConnected, view]);
 
   const handleGetStarted = () => {
-    if (isConnected) {
-      setView("dashboard");
-    } else {
-      setShowConnectModal(true);
-    }
+    // Allow viewing dashboard without wallet - only require wallet for transactions
+    setView("dashboard");
+  };
+
+  const handleConnectWallet = () => {
+    setShowConnectModal(true);
   };
 
   // Only pass real data from the contract - no fake numbers

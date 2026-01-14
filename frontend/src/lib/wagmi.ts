@@ -1,13 +1,35 @@
 import { http, createConfig } from "wagmi";
 import { mantle } from "wagmi/chains";
-import { injected } from "wagmi/connectors";
+import { injected, walletConnect, metaMask } from "wagmi/connectors";
+
+// WalletConnect Project ID - Get one at https://cloud.walletconnect.com
+const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "demo-project-id";
 
 // MAINNET ONLY Configuration - Mantle Network
 export const config = createConfig({
   chains: [mantle],
   connectors: [
+    // MetaMask - works in browser extension AND MetaMask mobile in-app browser
+    metaMask({
+      dappMetadata: {
+        name: "RoadGuard",
+        url: typeof window !== "undefined" ? window.location.origin : "https://roadguard.app",
+      },
+    }),
+    // WalletConnect - for mobile wallet apps (MetaMask, Trust, etc.)
+    walletConnect({
+      projectId: WALLETCONNECT_PROJECT_ID,
+      metadata: {
+        name: "RoadGuard",
+        description: "Decentralized road incident reporting on Mantle",
+        url: typeof window !== "undefined" ? window.location.origin : "https://roadguard.app",
+        icons: ["https://roadguard.app/images/logo.png"],
+      },
+      showQrModal: true,
+    }),
+    // Generic injected - fallback for other wallets
     injected({
-      target: "metaMask",
+      shimDisconnect: true,
     }),
   ],
   transports: {

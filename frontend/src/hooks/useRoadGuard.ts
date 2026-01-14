@@ -68,9 +68,89 @@ export function usePendingRewards(commitment: `0x${string}` | undefined) {
 }
 
 /**
- * Hook for submitting a report
+ * Hook for submitting a report ANONYMOUSLY via relayer
+ * The relayer submits the transaction, so your wallet is never linked to the report
  */
 export function useSubmitReport() {
+  const [isPending, setIsPending] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [hash, setHash] = useState<`0x${string}` | undefined>(undefined);
+
+  const submitReport = useCallback(
+    async (params: {
+      commitment: `0x${string}`;
+      latitude: number;
+      longitude: number;
+      eventType: 0 | 1 | 2 | 3 | 4 | 5;
+      stakeAmount?: bigint;
+    }) => {
+      const { commitment, latitude, longitude, eventType, stakeAmount = MIN_STAKE } = params;
+
+      setIsPending(true);
+      setIsConfirming(false);
+      setIsSuccess(false);
+      setError(null);
+      setHash(undefined);
+
+      try {
+        // Submit via relayer for 100% privacy
+        const response = await fetch("/api/relay/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            commitment,
+            latitude,
+            longitude,
+            eventType,
+            stakeAmount: stakeAmount.toString(),
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to submit report");
+        }
+
+        setHash(data.txHash as `0x${string}`);
+        setIsConfirming(true);
+
+        // The relayer already waits for confirmation, so we're done
+        setIsConfirming(false);
+        setIsSuccess(true);
+
+        console.log("[Anonymous Report] Submitted via relayer:", data.txHash);
+        console.log("[Anonymous Report] Your wallet is NOT linked to this report!");
+
+        return data;
+      } catch (err: any) {
+        console.error("[Anonymous Report] Error:", err);
+        setError(err);
+        throw err;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    []
+  );
+
+  return {
+    submitReport,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+  };
+}
+
+/**
+ * Hook for submitting a report DIRECTLY from user's wallet (non-anonymous)
+ * Use this if you want the report linked to your wallet
+ */
+export function useSubmitReportDirect() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 

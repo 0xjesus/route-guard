@@ -52,6 +52,10 @@ const CONTRACT_ABI = [
 ] as const;
 
 async function fetchReportsFromChain(lat: number, lng: number, radius: number, limit: number) {
+  if (!CONTRACT_ADDRESS) {
+    throw new Error("No contract address configured");
+  }
+
   const client = createPublicClient({
     chain: mantle,
     transport: http("https://rpc.mantle.xyz"),
@@ -62,9 +66,11 @@ async function fetchReportsFromChain(lat: number, lng: number, radius: number, l
     abi: CONTRACT_ABI,
     functionName: "reportCount",
   });
-
   const totalReports = Number(count);
-  if (totalReports === 0) return [];
+
+  if (totalReports === 0) {
+    return [];
+  }
 
   // Fetch event logs to get transaction hashes from Mantlescan API
   // (RPC getLogs has issues with large block ranges)
@@ -104,17 +110,13 @@ async function fetchReportsFromChain(lat: number, lng: number, radius: number, l
       const reportLat = Number(report.latitude) / 1e8;
       const reportLng = Number(report.longitude) / 1e8;
 
-      const now = Math.floor(Date.now() / 1000);
-      const isNotExpired = Number(report.expiresAt) > now;
-
-      // Filter by bounding box, status, and expiration
+      // Filter by bounding box and status only (no expiration filter - show all reports)
       if (
         reportLat >= lat - latDelta &&
         reportLat <= lat + latDelta &&
         reportLng >= lng - lngDelta &&
         reportLng <= lng + lngDelta &&
-        (report.status === 0 || report.status === 1) && // active or confirmed
-        isNotExpired // not expired
+        (report.status === 0 || report.status === 1) // active or confirmed
       ) {
         reports.push({
           id: i,
@@ -163,8 +165,8 @@ export async function GET(request: NextRequest) {
     try {
       const reports = await fetchReportsFromChain(lat, lng, radius, limit);
       return NextResponse.json({
-        reports,
-        count: reports.length,
+        reports: reports || [],
+        count: reports?.length || 0,
         source: "blockchain",
       });
     } catch (error) {
@@ -172,7 +174,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         reports: [],
         count: 0,
-        error: "Failed to fetch from blockchain",
+        source: "blockchain",
+        error: "Failed to fetch from chain",
       });
     }
   }
@@ -192,13 +195,14 @@ export async function GET(request: NextRequest) {
     const minLng = (lng - lngDelta).toFixed(8);
     const maxLng = (lng + lngDelta).toFixed(8);
 
-    // Build conditions
+    // Build conditions - include reports expired within last 24 hours for demo
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const conditions = [
       gte(reportsCache.locationLat, minLat),
       lte(reportsCache.locationLat, maxLat),
       gte(reportsCache.locationLng, minLng),
       lte(reportsCache.locationLng, maxLng),
-      gte(reportsCache.expiresAt, new Date()), // Filter expired reports
+      gte(reportsCache.expiresAt, oneDayAgo), // Include recently expired
     ];
 
     // Filter by status if provided

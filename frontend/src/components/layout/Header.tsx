@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain } from "wagmi";
 import { formatEther } from "viem";
@@ -15,6 +15,8 @@ import {
   Info,
   AlertTriangle,
   Shield,
+  Smartphone,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -38,9 +40,29 @@ export default function Header({ className }: HeaderProps) {
   const [showWalletMenu, setShowWalletMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showConnectModal, setShowConnectModal] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const isWrongNetwork = isConnected && chainId !== MANTLE_CHAIN_ID;
+
+  // Detect if we're on mobile
+  const isMobile = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }, []);
+
+  // Detect if MetaMask is installed
+  const hasInjectedProvider = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return !!(window as any).ethereum;
+  }, []);
+
+  // Open MetaMask deep link on mobile
+  const openInMetaMask = useCallback(() => {
+    const currentUrl = window.location.href;
+    const metamaskDeepLink = `https://metamask.app.link/dapp/${currentUrl.replace(/^https?:\/\//, "")}`;
+    window.location.href = metamaskDeepLink;
+  }, []);
 
   const formatAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
@@ -53,10 +75,21 @@ export default function Header({ className }: HeaderProps) {
   };
 
   const handleConnect = () => {
+    // On mobile without injected provider, show modal with options
+    if (isMobile && !hasInjectedProvider) {
+      setShowConnectModal(true);
+      return;
+    }
+    // Otherwise connect directly with first available connector
     const connector = connectors[0];
     if (connector) {
       connect({ connector });
     }
+  };
+
+  const handleConnectorConnect = (connector: any) => {
+    connect({ connector });
+    setShowConnectModal(false);
   };
 
   return (
@@ -397,6 +430,63 @@ export default function Header({ className }: HeaderProps) {
           >
             Got it, Let&apos;s Start!
           </Button>
+        </div>
+      </Modal>
+
+      {/* Connect Wallet Modal - for mobile */}
+      <Modal
+        isOpen={showConnectModal}
+        onClose={() => setShowConnectModal(false)}
+        title="Connect Wallet"
+        size="md"
+      >
+        <div className="space-y-4">
+          {/* Primary: Open in MetaMask App */}
+          <button
+            onClick={openInMetaMask}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold flex items-center justify-center gap-3 active:scale-98 transition-transform"
+          >
+            <Smartphone className="w-5 h-5" />
+            Open in MetaMask App
+            <ExternalLink className="w-4 h-4" />
+          </button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-white/10"></div>
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="px-2 bg-mantle-bg-card text-mantle-text-tertiary">or use WalletConnect</span>
+            </div>
+          </div>
+
+          {/* WalletConnect option */}
+          {connectors
+            .filter((c) => c.id === "walletConnect")
+            .map((connector) => (
+              <button
+                key={connector.uid}
+                onClick={() => handleConnectorConnect(connector)}
+                disabled={isConnecting}
+                className="w-full py-3 rounded-xl bg-mantle-bg-elevated border border-white/10 text-white font-medium flex items-center justify-center gap-3 disabled:opacity-50 active:scale-98 transition-transform"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="w-5 h-5" />
+                    {connector.name}
+                  </>
+                )}
+              </button>
+            ))}
+
+          <p className="text-center text-label-sm text-mantle-text-tertiary">
+            Don&apos;t have MetaMask? Download it from the App Store or Play Store.
+          </p>
         </div>
       </Modal>
     </>

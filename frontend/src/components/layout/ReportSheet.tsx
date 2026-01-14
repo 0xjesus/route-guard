@@ -21,6 +21,8 @@ import {
   Upload,
   Loader2,
   Image as ImageIcon,
+  Search,
+  Crosshair,
 } from "lucide-react";
 import Image from "next/image";
 import { BottomSheet, Modal } from "@/components/ui/Modal";
@@ -34,6 +36,7 @@ interface ReportSheetProps {
   isOpen: boolean;
   onClose: () => void;
   selectedLocation: { lat: number; lng: number } | null;
+  onLocationChange?: (location: { lat: number; lng: number }) => void;
   onSuccess?: () => void;
 }
 
@@ -52,6 +55,7 @@ export default function ReportSheet({
   isOpen,
   onClose,
   selectedLocation,
+  onLocationChange,
   onSuccess,
 }: ReportSheetProps) {
   const { isConnected } = useAccount();
@@ -64,6 +68,17 @@ export default function ReportSheet({
   const [passphrase, setPassphrase] = useState("");
   const [stakeAmount, setStakeAmount] = useState(MIN_STAKE);
   const [isMobile, setIsMobile] = useState(false);
+
+  // Location search state
+  const [locationSearch, setLocationSearch] = useState("");
+  const [locationSuggestions, setLocationSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [showLocationSearch, setShowLocationSearch] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesService = useRef<google.maps.places.PlacesService | null>(null);
+  const geocoder = useRef<google.maps.Geocoder | null>(null);
+  const searchDebounce = useRef<NodeJS.Timeout | null>(null);
 
   // Photo upload state
   const [photos, setPhotos] = useState<{ file: File; preview: string; url?: string }[]>([]);
@@ -166,6 +181,121 @@ export default function ReportSheet({
     }
   }, [isSuccess, onSuccess]);
 
+  // Track if geocoder is ready
+  const [geocoderReady, setGeocoderReady] = useState(false);
+
+  // Initialize Google Places services
+  useEffect(() => {
+    const initServices = () => {
+      if (window.google?.maps?.places) {
+        autocompleteService.current = new google.maps.places.AutocompleteService();
+        geocoder.current = new google.maps.Geocoder();
+        // PlacesService needs a DOM element
+        const div = document.createElement("div");
+        placesService.current = new google.maps.places.PlacesService(div);
+        setGeocoderReady(true);
+      } else {
+        setTimeout(initServices, 500);
+      }
+    };
+    initServices();
+  }, []);
+
+  // Reverse geocode when selectedLocation changes (from map click)
+  useEffect(() => {
+    if (selectedLocation && !locationSearch && geocoderReady && geocoder.current) {
+      geocoder.current.geocode(
+        { location: { lat: selectedLocation.lat, lng: selectedLocation.lng } },
+        (results, status) => {
+          if (status === "OK" && results?.[0]) {
+            setLocationSearch(results[0].formatted_address);
+          }
+        }
+      );
+    }
+  }, [selectedLocation, locationSearch, geocoderReady]);
+
+  // Search locations
+  const searchLocations = useCallback((query: string) => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+
+    if (!query || query.length < 2) {
+      setLocationSuggestions([]);
+      return;
+    }
+
+    setIsSearchingLocation(true);
+    searchDebounce.current = setTimeout(() => {
+      if (autocompleteService.current) {
+        autocompleteService.current.getPlacePredictions(
+          { input: query, types: ["geocode", "establishment"] },
+          (results, status) => {
+            setIsSearchingLocation(false);
+            if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+              setLocationSuggestions(results);
+            } else {
+              setLocationSuggestions([]);
+            }
+          }
+        );
+      }
+    }, 300);
+  }, []);
+
+  // Select a location from suggestions
+  const selectLocation = useCallback((placeId: string, description: string) => {
+    if (!placesService.current) return;
+
+    placesService.current.getDetails(
+      { placeId, fields: ["geometry"] },
+      (place, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          onLocationChange?.({ lat, lng });
+          setLocationSearch(description);
+          setLocationSuggestions([]);
+          setShowLocationSearch(false);
+        }
+      }
+    );
+  }, [onLocationChange]);
+
+  // Use current location
+  const useMyLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported");
+      return;
+    }
+
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude: lat, longitude: lng } = position.coords;
+        onLocationChange?.({ lat, lng });
+
+        // Reverse geocode to get address
+        if (geocoder.current) {
+          geocoder.current.geocode({ location: { lat, lng } }, (results, status) => {
+            setIsGettingLocation(false);
+            if (status === "OK" && results?.[0]) {
+              setLocationSearch(results[0].formatted_address);
+            }
+          });
+        } else {
+          setIsGettingLocation(false);
+        }
+        setShowLocationSearch(false);
+      },
+      (error) => {
+        setIsGettingLocation(false);
+        console.error("Geolocation error:", error);
+        alert("Could not get your location");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, [onLocationChange]);
+
   // Reset on close
   const handleClose = () => {
     setStep("type");
@@ -177,6 +307,10 @@ export default function ReportSheet({
     photos.forEach(p => URL.revokeObjectURL(p.preview));
     setPhotos([]);
     setUploadError(null);
+    // Reset location search
+    setLocationSearch("");
+    setLocationSuggestions([]);
+    setShowLocationSearch(false);
     onClose();
   };
 
@@ -218,22 +352,92 @@ export default function ReportSheet({
       {/* Step 1: Select Event Type */}
       {step === "type" && (
         <div className="space-y-6">
-          {/* Location Preview */}
-          {selectedLocation && (
-            <div className="flex items-center gap-3 p-4 bg-mantle-bg-secondary rounded-xl">
-              <div className="w-10 h-10 rounded-xl bg-mantle-accent/20 flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-mantle-accent" />
+          {/* Location Search Section */}
+          <div className="space-y-3">
+            <h3 className="text-label-lg font-medium text-mantle-text-secondary">
+              Where is it happening?
+            </h3>
+
+            {/* Search Input */}
+            <div className="relative">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-mantle-text-tertiary" />
+                  <input
+                    type="text"
+                    value={locationSearch}
+                    onChange={(e) => {
+                      setLocationSearch(e.target.value);
+                      searchLocations(e.target.value);
+                      setShowLocationSearch(true);
+                    }}
+                    onFocus={() => locationSuggestions.length > 0 && setShowLocationSearch(true)}
+                    placeholder="Search address or place..."
+                    className="w-full bg-mantle-bg-tertiary rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-mantle-text-tertiary border border-white/10 focus:border-mantle-accent focus:outline-none"
+                  />
+                  {isSearchingLocation && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-mantle-accent animate-spin" />
+                  )}
+                </div>
+
+                {/* My Location Button */}
+                <button
+                  onClick={useMyLocation}
+                  disabled={isGettingLocation}
+                  className="w-12 h-12 rounded-xl bg-mantle-accent/20 border border-mantle-accent/30 flex items-center justify-center hover:bg-mantle-accent/30 transition-colors disabled:opacity-50 flex-shrink-0"
+                  title="Use my location"
+                >
+                  {isGettingLocation ? (
+                    <Loader2 className="w-5 h-5 text-mantle-accent animate-spin" />
+                  ) : (
+                    <Crosshair className="w-5 h-5 text-mantle-accent" />
+                  )}
+                </button>
               </div>
-              <div>
-                <p className="text-body-sm font-medium text-mantle-text-primary">
-                  Selected Location
-                </p>
-                <p className="text-label-md text-mantle-text-tertiary font-mono">
-                  {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
-                </p>
-              </div>
+
+              {/* Suggestions Dropdown */}
+              {showLocationSearch && locationSuggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-mantle-bg-primary rounded-xl border border-white/20 shadow-2xl overflow-hidden z-50 max-h-60 overflow-y-auto">
+                  {locationSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.place_id}
+                      onClick={() => selectLocation(suggestion.place_id, suggestion.description)}
+                      className="w-full px-4 py-3 flex items-start gap-3 hover:bg-mantle-accent/20 transition-colors text-left border-b border-white/5 last:border-b-0"
+                    >
+                      <MapPin className="w-5 h-5 text-mantle-accent mt-0.5 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-white truncate">
+                          {suggestion.structured_formatting.main_text}
+                        </div>
+                        <div className="text-xs text-mantle-text-tertiary truncate">
+                          {suggestion.structured_formatting.secondary_text}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Selected Location Display */}
+            {selectedLocation && (
+              <div className="flex items-center gap-3 p-3 bg-mantle-success/10 border border-mantle-success/30 rounded-xl">
+                <Check className="w-5 h-5 text-mantle-success flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-mantle-success">Location Selected</p>
+                  <p className="text-xs text-mantle-text-tertiary font-mono truncate">
+                    {locationSearch || `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!selectedLocation && (
+              <p className="text-xs text-mantle-text-tertiary text-center">
+                Search for a location above, use your current location, or tap on the map
+              </p>
+            )}
+          </div>
 
           {/* Event Type Grid */}
           <div>
